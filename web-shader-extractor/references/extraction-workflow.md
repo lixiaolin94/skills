@@ -42,6 +42,16 @@ new ??(w, h, {minFilter, ...})   → WebGLRenderTarget
 ??.setAttribute()     → bufferGeometry
 ```
 
+## 框架脱壳（React / Vue 等 → Vanilla JS）
+
+Canvas 效果常被 React/Vue 等框架包装。脱壳思路：
+
+1. **找副作用入口**：`useEffect`/`onMounted` 中的 Canvas 初始化代码就是核心逻辑
+2. **收集 cleanup**：所有销毁操作（`removeEventListener`、`cancelAnimationFrame`、`observer.disconnect()`）汇总为 `destroy()` 函数
+3. **丢弃响应式包装**：Canvas 状态（粒子位置、帧计数等）只在 RAF 内读写，直接用 `let` 变量，不需要 `useState`/`ref` 等响应式容器
+
+原生 API（`IntersectionObserver`、`ResizeObserver`、`matchMedia` 等）不受框架影响，原样保留。
+
 ## 反混淆规则
 
 1. **类名**：根据构造参数和方法调用推断

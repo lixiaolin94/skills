@@ -1,3 +1,5 @@
+[中文版](README_CN.md)
+
 # Skills
 
 A small collection of reusable skills for AI coding agents.
@@ -27,15 +29,11 @@ npx skills add https://github.com/lixiaolin94/skills --skill weekly-report
 npx skills add https://github.com/lixiaolin94/skills --skill web-shader-extractor
 ```
 
-## Manual Sync
+## Acknowledgments
 
-Clone the repository and run the sync script:
-
-```bash
-git clone https://github.com/lixiaolin94/skills.git
-cd skills
-./sync-skills.sh
-```
+| Contributor | Contributions |
+|-------------|---------------|
+| [Huazi](https://github.com/HeyHuazi) | **web-shader-extractor** — 2D Canvas extraction report that led to 2D Canvas identification, porting strategy, and framework shell-removal rules |
 
 ## License
 

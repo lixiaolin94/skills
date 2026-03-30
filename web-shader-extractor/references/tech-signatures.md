@@ -19,6 +19,12 @@
 
 **常量**：`ClampToEdgeWrapping`, `NearestFilter`, `RGBAFormat`, `FloatType`, `DoubleSide`
 
+## 2D Canvas
+
+`dataEngine: null` 时，用 `getContext('2d')` 有无 + `createShader`/`shaderSource` 有无区分：
+- 有 `getContext('2d')`，无 WebGL 调用 → 纯 2D Canvas
+- 有 WebGL 调用 → Raw WebGL / PixiJS
+
 ## Raw WebGL
 
 ```javascript

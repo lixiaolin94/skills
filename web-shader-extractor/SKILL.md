@@ -69,7 +69,9 @@ curl -s -L --compressed '<URL>' > /tmp/page.html
 canvas-info.json 的 dataEngine 字段：
 ├─ "three.js rXXX" → Three.js（r170+ 可能是 TSL → references/tsl-extraction.md）
 ├─ "Babylon.js vX.X" → Babylon.js
-├─ null → Raw WebGL / PixiJS，看 bundle 扫描
+├─ null → 进一步区分：
+│   ├─ bundle 含 createShader/shaderSource → Raw WebGL / PixiJS
+│   └─ bundle 含 getContext('2d') 且无 WebGL 调用 → 2D Canvas（→ references/porting-strategy.md § 2D Canvas）
 └─ 无 canvas → CSS/SVG 动画
 
 URL 或 HTML 特征匹配已知平台 → 直接跳转专用工作流（跳过通用 Phase 3-4）：
