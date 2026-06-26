@@ -1,13 +1,13 @@
 #!/bin/bash
-# Scan JS bundle(s) for WebGL/shader keywords and report tech stack
+# Scan JS bundle slice(s) for WebGL/shader keywords and report hypotheses.
 # Usage: scan-bundle.sh <file1.js> [file2.js ...]
-# Output: keyword counts + tech stack guess
+# Output: keyword counts + tech stack hypotheses. These are not target-bound conclusions.
 
 set -eu
 
 if [ $# -eq 0 ]; then
     echo "Usage: scan-bundle.sh <file1.js> [file2.js ...]"
-    echo "Scans JS files for WebGL/shader keywords and identifies tech stack."
+    echo "Scans JS files for WebGL/shader keywords and produces hypotheses."
     exit 1
 fi
 
@@ -43,13 +43,13 @@ for kw in "snoise" "simplex" "perlin" "noise" "PoissonDisk" "Poisson"; do
 done
 
 echo ""
-echo "=== TECH STACK DETECTION ==="
+echo "=== TECH STACK HYPOTHESES (NOT TARGET LOCK) ==="
 
 detect() {
     local label="$1" pattern="$2"
     local count
     count=$(grep -oE "$pattern" "${FILES[@]}" 2>/dev/null | wc -l | tr -d ' ')
-    [ "$count" -gt 0 ] && printf "  %-25s %s hits\n" "$label" "$count" || true
+    [ "$count" -gt 0 ] && printf "  %-25s %s hits (hypothesis)\n" "$label" "$count" || true
 }
 
 # Frameworks (patterns specific enough to avoid false positives)
@@ -61,8 +61,8 @@ detect "Raw WebGL"             "gl\.bindBuffer|gl\.bindTexture|gl\.useProgram|gl
 detect "Regl"                  "regl\(|regl\.frame|regl\.texture"
 detect "OGL"                   "ogl\.|ogl/"
 
-# Patterns
-detect "GPGPU"                 "setRenderTarget|RenderTarget|ping.pong|gpgpu|GPGPU"
+# Patterns. Generic RenderTarget hits are common post-processing evidence, not GPGPU.
+detect "GPGPU/simulation clues" "ping[-_.]?pong|GPUComputationRenderer|DataTexture|feedback|simulation|compute"
 detect "Particles"             "gl_PointSize|gl_PointCoord|PointSize|particl"
 detect "Post-processing"       "EffectComposer|RenderPass|ShaderPass|postprocess"
 detect "Ray marching"          "rayMarch|sdSphere|sdBox|sdRoundBox"
@@ -74,3 +74,7 @@ for f in "${FILES[@]}"; do
     size=$(wc -c < "$f" | tr -d ' ')
     echo "  $(basename "$f"): ${size} bytes"
 done
+
+echo ""
+echo "Reminder: bind any hypothesis to the target surface group before using it as implementation evidence."
+echo "GPGPU requires combined evidence such as feedback loops, ping-pong pairs, data-texture simulation, or compute-like update passes."

@@ -1,190 +1,212 @@
-# shaders.com 提取工作流
+# shaders.com / TSL Adapter
 
-shaders.com 是一个 shader 设计工具，使用 Nuxt.js + Three.js r183 TSL + Supabase。
+Use this adapter only after the target surface group has been attributed to a shaders.com renderer or a shaders.com public definition.
+Treat versions, keys, mappings, and backend choice as runtime facts to verify on the current target.
 
-## 识别特征
+Stability: volatile. Treat endpoint names, variable names, keys, component IDs, short-code mappings, and backend choices as hints until verified on the current target.
 
-- URL: `shaders.com/collection/{slug}/{presetId}` 或 `shaders.com/preset/{id}`
-- Canvas: `data-renderer="shaders"` + `data-engine="three.js r183"`
-- Nuxt.js (`_nuxt/` 路径)
-- Clerk 认证
-- Supabase 存储 (`data.shaders.com/storage/v1/`)
+shaders.com is a shader design tool. Observed builds use Nuxt.js, Three.js TSL, and Supabase. Verify the exact Three.js version and WebGPU/WebGL backend from target runtime or current bundle evidence.
 
-## 关键架构差异
+## Adapter Interface
 
-与 Unicorn Studio 完全不同：
-- **不使用 GLSL** — 使用 Three.js TSL (Three Shader Language) 节点系统
-- **87 种组件类型** — 每种有自己的 TSL `fragmentNode` 函数
-- **定义数据是 XOR + base64 编码的**
-- **组件可嵌套** — 树形结构（Glass 的 children 是其内部效果）
+- `detect(context)`: target canvas has shaders.com renderer evidence, target route/API returns the matching preset/collection definition, or runtime owner binds the renderer to target.
+- `preferredEvidence(context)`: public collection/preset definition, current runtime config, and target-bound Three.js/TSL module route.
+- `capture(context)`: component tree, decoded definition, TSL node source, assets/SDFs, renderer backend, time/input rules, color/output model.
+- `replay(context)`: `SOURCE_REPLAY` when definition and TSL source are sufficient; `PIPELINE_REPLAY` when runtime/capture facts are sufficient but source is incomplete.
+- `validationHints(context)`: SDF Y flip, linear color pipeline, TSL timer rules, Glass parameter fidelity, WebGPU vs WebGL backend.
+- `fallback(context)`: target-bound source-map or module slice, frame capture, then behavior rebuild with explicit downgrade.
 
-## 数据获取
+## Recognition Signals
 
-### API 端点
+- URL pattern: `shaders.com/collection/{slug}/{presetId}` or `shaders.com/preset/{id}`
+- Canvas hints such as `data-renderer="shaders"` plus `data-engine`; verify the version dynamically
+- Nuxt.js paths such as `_nuxt/`
+- Clerk authentication on the site
+- Supabase storage URLs such as `data.shaders.com/storage/v1/`
+
+## Architecture Differences
+
+Compared with Unicorn Studio:
+
+- It commonly uses Three.js TSL node graphs rather than raw GLSL source.
+- It has multiple component types, each potentially backed by a TSL `fragmentNode`; verify the current count and names from the current bundle.
+- Definition data may be XOR + base64 encoded.
+- Components can be nested; for example a Glass component may contain child effects.
+
+## Data Acquisition
+
+### API Endpoints
 
 ```bash
-# 集合变体（含编码定义）— 公开，无需认证
+# Collection variant with encoded definition; public when accessible without auth.
 curl -s "https://shaders.com/api/collections/{slug}/{variantId}"
 
-# 预览 API（含编码定义 + 水印注入）
+# Preview API with encoded definition and possible watermark injection.
 curl -s "https://shaders.com/api/preview/preset/{presetId}"
 
-# Nuxt payload（只含元数据，不含 shader 定义）
+# Nuxt payload, usually metadata only rather than shader definition.
 curl -s "https://shaders.com/collection/{slug}/{id}/_payload.json"
 ```
 
-### 定义解码
+### Definition Decoding
 
-定义使用 XOR + base64 编码，有两套密钥：
+Definitions may use XOR + base64 encoding with route-specific keys.
 
-1. **网站 API**（`/api/collections/`）：
-   - 混淆密钥: `a5e7244ad0973f07e10285bfa75ddbe4`（来自 Nuxt runtime config）
-   - 组件/属性名用短代码（`C52`=Plasma, `p06`=angle, 等）
-   - 解码: `JSON.parse(XOR(base64decode(encoded), keyBytes))`
-   - 然后需要 code→name 映射表还原可读名称
+1. Website API (`/api/collections/`):
+   - Extract the obfuscation key from the current Nuxt runtime config. Do not reuse fixed keys from old samples.
+   - Component/property names may use short codes such as `C52` for `Plasma` or `p06` for `angle`.
+   - Decode with `JSON.parse(XOR(base64decode(encoded), keyBytes))`.
+   - Restore readable names with the current code-to-name mapping table.
 
-2. **预览 API**（`/api/preview/`）：
-   - 密钥: `shaders-preview-key`
-   - 使用人类可读属性名（无需映射）
-   - 注意：会注入水印 `ImageTexture` 组件
+2. Preview API (`/api/preview/`):
+   - Verify the key and response shape from the current public frontend code.
+   - It may use readable property names directly.
+   - It may inject a watermark `ImageTexture` component.
 
-### 代码映射表
+### Code Mapping Table
 
-87 种组件按字母排序编号 `C00-C86`，233 种属性按字母排序编号 `p00-p232`。
-映射表可从 JS bundle 中提取。
+Extract component and property short-code mappings from the current JS bundle. Do not assume component counts, sorting, or numeric IDs are stable across releases.
 
-## 已知陷阱
+## Known Failure Cases
 
-### Y 轴翻转（反复出现！）
+### Y-Axis Flip
 
-**SDF 纹理和 UV 坐标系统性 Y 翻转** — 已在多次提取中确认：
+Observed shaders.com samples show a Y flip for SDF textures and UVs.
 
-shaders.com 的 SDF 二进制（`.bin`）使用**图像坐标系**（Y=0 在顶部），
-而 WebGL 纹理坐标 Y=0 在底部。直接加载会导致形状上下翻转。
+SDF binaries (`.bin`) often use image coordinates where Y=0 is at the top, while WebGL texture coordinates use Y=0 at the bottom. Loading them directly can flip shapes vertically.
 
 ```glsl
-// 错误：直接用 shapeUV 采样
+// Wrong: direct sampling.
 float sdf = texture(tSDF, shapeUV).r;
 
-// 正确：翻转 Y
+// Correct for known flipped SDFs: flip Y.
 vec2 sdfUV = vec2(shapeUV.x, 1.0 - shapeUV.y);
 float sdf = texture(tSDF, sdfUV).r;
 
-// 注意：梯度的 Y 分量也需要取反
+// The Y component of the gradient may also need sign inversion.
 float dSdy = -(texture(tSDF, sdfUV - vec2(0, eps)).r - sdf) / eps;
 ```
 
-同样，组件定义中的 `center.y` 使用 DOM 坐标（Y=0 在顶部），
-在 Glass shader 中需要翻转：`center.y = 1.0 - center.y`。
+Component definitions may also use DOM coordinates where Y=0 is at the top. For Glass-style shaders, verify whether `center.y` must be flipped as `center.y = 1.0 - center.y`.
 
-### SDF 二进制格式
+### SDF Binary Format
 
-- 格式：512×512 Float32 单通道（1,048,576 bytes = 512² × 4）
-- 值域：有符号距离，负值=内部，正值=外部（如 [-0.065, 0.486]）
-- **不需要重映射**（不要做 `*2-1`），直接使用原始值
-- 需要 `OES_texture_float_linear` 扩展做线性过滤
-- WebGL2 加载：`gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, 512, 512, 0, gl.RED, gl.FLOAT, data)`
+Known samples use:
 
-## 组件类型速查
+- 512 x 512 Float32 single-channel data
+- 1,048,576 bytes: `512 * 512 * 4`
+- signed distance values, negative inside and positive outside
+- raw values without `* 2.0 - 1.0` remapping
+- `OES_texture_float_linear` for linear filtering when needed
 
-| 类别 | 组件 | 复杂度 |
-|------|------|--------|
-| 纹理 | Plasma, Godrays, SimplexNoise, LinearGradient, RadialGradient | 中 |
-| 形状 | Glass, Blob, Circle, Ring, Star, RoundedRect, Polygon | 高（Glass 最复杂） |
-| 畸变 | WaveDistortion, ChromaticAberration, Liquify, Twirl, Bulge | 低-中 |
-| 风格化 | FilmGrain, Halftone, Ascii, Dither, Glow, Bloom | 低-中 |
-| 后处理 | Blur, ProgressiveBlur, BrightnessContrast, HueShift | 低 |
+WebGL2 loading pattern:
 
-## 渲染管线
-
-```
-Three.js r183 TSL 渲染器
-├─ 优先尝试 WebGPU，降级到 WebGL
-├─ 正交相机 + 单个全屏四边形
-├─ 组件树从底到顶合成
-├─ 有 children 的组件用 RTT (render-to-texture) 捕获子内容
-├─ blend mode 用自定义混合函数
-└─ Glass 组件最复杂：SDF 评估 → 梯度法线 → 折射 → 色差 → 模糊 → 着色 → 高光 → 菲涅尔 → 合成
+```js
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, 512, 512, 0, gl.RED, gl.FLOAT, data);
 ```
 
-## 移植策略
+## Component Table
 
-1. **TSL 不能直接复制** — 需要翻译为 GLSL
-2. **从 JS bundle 提取 TSL `fragmentNode`** → 反混淆 → 翻译为 GLSL
-3. **组件树 → multi-pass FBO 管线**
-4. **SDF 纹理需要 Y-flip**（见上方陷阱）
-5. **Glass 组件参数多**（20+），需要精确匹配每个值
+| Category | Components | Complexity |
+|---|---|---|
+| Texture | Plasma, Godrays, SimplexNoise, LinearGradient, RadialGradient | medium |
+| Shape | Glass, Blob, Circle, Ring, Star, RoundedRect, Polygon | high |
+| Distortion | WaveDistortion, ChromaticAberration, Liquify, Twirl, Bulge | low to medium |
+| Stylization | FilmGrain, Halftone, Ascii, Dither, Glow, Bloom | low to medium |
+| Post-processing | Blur, ProgressiveBlur, BrightnessContrast, HueShift | low |
 
-## 颜色空间处理（关键）
+## Render Pipeline
 
-shaders.com 的 Three.js 渲染器全程在 **linear 空间** 工作：
-- 组件定义中的 hex 颜色（如 `#2c2c42`）是 **sRGB** 值
-- TSL 的 `color()` 函数自动将 sRGB→linear
-- 所有中间 FBO 均存储 linear 值
-- 最终由渲染器做 linear→sRGB 输出编码
+Typical target-bound evidence may reveal:
 
-移植时：
+```text
+Three.js TSL renderer; verify version dynamically
+|- prefers WebGPU, falls back to WebGL
+|- orthographic camera plus one fullscreen quad
+|- component tree composited bottom to top
+|- components with children capture child content through RTT
+|- blend mode implemented with custom blend functions
+`- Glass path: SDF evaluation -> gradient normal -> refraction -> chromatic aberration -> blur -> tint -> highlight -> Fresnel -> composite
+```
+
+## Replay Strategy
+
+1. TSL cannot be copied as raw GLSL; translate it or replay it through the source stack.
+2. Extract the target-bound TSL `fragmentNode` from the current JS bundle when source replay requires it.
+3. Convert the component tree into a multi-pass FBO graph.
+4. Validate SDF Y orientation against the target.
+5. Glass components have many parameters; keep source multipliers exact.
+
+## Color Space
+
+Known shaders.com / Three.js TSL samples commonly use a linear workflow, but the current target must still be verified from renderer, runtime, or source evidence.
+
+- Hex colors such as `#2c2c42` are commonly sRGB values.
+- TSL `color()` commonly converts sRGB to linear.
+- Whether intermediate FBOs store linear values must be verified from the target render graph.
+- The final output encoding stage must be verified from target renderer configuration.
+
+Example for a common path:
+
 ```glsl
-// 1. 颜色定义时：sRGB hex → linear
+// Common path: sRGB hex -> linear at definition time.
 vec3 colorA = pow(vec3(0.173, 0.173, 0.259), vec3(2.2));  // #2c2c42
 
-// 2. 中间 pass：全部在 linear 空间计算，不做 gamma
-// 3. 最终输出 pass（仅一次）：linear → sRGB
-fragColor = vec4(pow(color.rgb, vec3(1.0/2.2)), color.a);
+// Intermediate passes and final output encoding must follow target evidence.
+fragColor = vec4(pow(color.rgb, vec3(1.0 / 2.2)), color.a);
 ```
 
-**常见错误**：在中间 pass 做 gamma 校正，导致后续 pass 在错误空间累加高光/菲涅尔。
+Error case: applying a fixed gamma correction in intermediate or final passes without verifying the target renderer's color configuration.
 
-## 参数精确对齐原则
+## Parameter Fidelity
 
-**绝对禁止手动调参**。所有参数必须严格匹配 TSL 翻译中的公式和乘数：
+Do not tune parameters manually. Match the formulas and multipliers from the TSL translation:
 
+```text
+Original TSL multiplier       GLSL must use
+aberration * 0.06             not 0.12
+fresnelSoftness * 0.06        not 0.12
+fresnel = 0.17                not 0.4
+SDF gradient eps = 0.01       not 0.005
 ```
-TSL 原始乘数                → GLSL 必须使用的值
-aberration * 0.06           → 不能改为 0.12
-fresnelSoftness * 0.06      → 不能改为 0.12
-fresnel (0.17)              → 不能改为 0.4
-SDF gradient eps = 0.01     → 不能改为 0.005
-```
 
-如果视觉效果不匹配，应检查：
-1. 颜色空间是否正确（sRGB/linear 混乱是最常见原因）
-2. 噪声函数实现差异（Perlin 实现 vs `mx_noise_float`）
-3. 时间基准是否正确
-4. FBO 管线顺序是否与组件树匹配
+If the visual result does not match, inspect:
 
-**不要**通过修改乘数来"补偿"视觉差异 — 这会在其他参数配置下崩溃。
+1. color space, especially sRGB/linear confusion
+2. noise implementation differences such as Perlin vs `mx_noise_float`
+3. time base
+4. FBO/component-tree order
 
-## TSL 时间约定
+Do not change multipliers to mask a mismatch. That may fit one preset while breaking other parameter combinations.
 
-`timerLocal(speed)` = 每秒递增 `speed` 单位。移植时：`uTime = seconds * speed`。
+## TSL Time Convention
 
-然后 shader 内部再乘自己的系数：
+`timerLocal(speed)` increments by `speed` units per second. Replay as `uTime = seconds * speed`, then apply any component-specific multiplier inside the shader.
 
-| 组件 | speed 参数 | shader 内部乘数 | 实际速率/秒 |
-|------|-----------|----------------|------------|
-| Plasma | 2 | × 0.125 | 0.25 |
-| Godrays | 0.7 | × 0.2 | 0.14 |
-| WaveDistortion | 0.8 | × 0.5 | 0.4 |
-| FilmGrain | — | 无时间（静态） | 0 |
+| Component | speed parameter | shader multiplier | effective rate per second |
+|---|---:|---:|---:|
+| Plasma | 2 | 0.125 | 0.25 |
+| Godrays | 0.7 | 0.2 | 0.14 |
+| WaveDistortion | 0.8 | 0.5 | 0.4 |
+| FilmGrain | none | none | static |
 
-## TSL→GLSL 标识符映射（SPCVwBqR.js）
+## TSL To GLSL Identifier Mapping
 
-常用映射（随构建版本变化，需动态提取）：
+These mappings are examples from one observed bundle and may change. Extract them dynamically from the current build.
 
-| 本地名 | TSL 函数 | GLSL |
-|--------|---------|------|
-| C / z | vec4() | vec4 |
-| x / D | vec2() | vec2 |
-| q / N | vec3() | vec3 |
-| P / J | resolution | u_resolution |
-| A / $ | uv | vUv |
-| se / Oe | sin() | sin() |
-| W / I | cos() | cos() |
-| ne | mix() | mix() |
-| D | smoothstep() | smoothstep() |
-| fe | clamp() | clamp() |
-| ar | mx_noise_float() | perlinNoise3D() |
-| dr / Gt | timerLocal() | u_time × speed |
-| Me / wt | rtt() | FBO pass |
-| Ce | renderOutput() | fragColor |
+| Local name | TSL function | GLSL |
+|---|---|---|
+| `C` / `z` | `vec4()` | `vec4` |
+| `x` / `D` | `vec2()` | `vec2` |
+| `q` / `N` | `vec3()` | `vec3` |
+| `P` / `J` | `resolution` | `u_resolution` |
+| `A` / `$` | `uv` | `vUv` |
+| `se` / `Oe` | `sin()` | `sin` |
+| `W` / `I` | `cos()` | `cos` |
+| `ne` | `mix()` | `mix` |
+| `D` | `smoothstep()` | `smoothstep` |
+| `fe` | `clamp()` | `clamp` |
+| `ar` | `mx_noise_float()` | `perlinNoise3D()` candidate |
+| `dr` / `Gt` | `timerLocal()` | `u_time * speed` |
+| `Me` / `wt` | `rtt()` | FBO pass |
+| `Ce` | `renderOutput()` | `fragColor` |
