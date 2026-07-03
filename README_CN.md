@@ -8,7 +8,6 @@
 
 | 技能 | 说明 |
 |------|------|
-| **[weekly-report](weekly-report/)** | 从协作平台、Git 历史、Agent 会话、本地文档等多通道采集证据，生成结构化周报。 |
 | **[web-shader-extractor](web-shader-extractor/)** | 从网页中提取 WebGL/Canvas/Shader 视觉特效代码，反混淆后移植为独立原生 JS 项目。 |
 
 ## 安装
@@ -20,10 +19,6 @@ npx skills add https://github.com/lixiaolin94/skills
 ```
 
 安装单个技能：
-
-```bash
-npx skills add https://github.com/lixiaolin94/skills --skill weekly-report
-```
 
 ```bash
 npx skills add https://github.com/lixiaolin94/skills --skill web-shader-extractor

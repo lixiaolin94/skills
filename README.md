@@ -8,7 +8,6 @@ A small collection of reusable skills for AI coding agents.
 
 | Skill | Description |
 |-------|-------------|
-| **[weekly-report](weekly-report/)** | Generate structured weekly reports from multiple evidence channels such as collaboration platforms, Git history, agent sessions, and local documents. |
 | **[web-shader-extractor](web-shader-extractor/)** | Extract WebGL/Canvas/Shader effects from websites and port them into standalone native JS projects. |
 
 ## Install
@@ -20,10 +19,6 @@ npx skills add https://github.com/lixiaolin94/skills
 ```
 
 Install a specific skill:
-
-```bash
-npx skills add https://github.com/lixiaolin94/skills --skill weekly-report
-```
 
 ```bash
 npx skills add https://github.com/lixiaolin94/skills --skill web-shader-extractor
