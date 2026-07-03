@@ -16,15 +16,17 @@
   "targetSet": [],
   "alternatives": [],
   "effectBoundary": "surface-only",
-  "frameworkHypotheses": [],
-  "platformHypotheses": [],
+  "hypotheses": [],
+  "allowedHypothesisStatus": ["untested", "supported", "contradicted"],
   "interactions": [],
   "scopeRisk": "low",
   "blockingUnknowns": [],
   "nextProbe": {
     "type": "",
     "target": "",
-    "resolves": []
+    "resolves": [],
+    "distinguishes": [],
+    "expectedOutcomes": []
   },
   "evidence": [],
   "gateDecision": {

@@ -47,11 +47,11 @@ Record the unresolved unknown.
 
 ## Choosing The Next Action
 
-Prefer the action that resolves the most blocking unknowns while keeping authority high and cost low.
+Follow the discriminating probe rule in `references/recon-kernel.md`: prefer the cheapest probe that splits the live hypothesis set, keeping authority high.
 
-Invalid action: "download every bundle and inspect everything."
+Invalid action: "download every bundle and inspect everything" — no outcome of it eliminates a specific hypothesis.
 
-Valid action: "target context creation stack points into `hero-renderer.*.js`; fetch only that source-mapped module to resolve owner and shader source."
+Valid action: "target context creation stack points into `hero-renderer.*.js`; fetch only that source-mapped module. If it creates the target context, the worker-owner hypothesis is eliminated; if not, the main-thread-owner hypothesis is."
 
 ## Evidence Ledger
 
@@ -70,10 +70,11 @@ Use ledger entries for facts that influence implementation:
     "hash": "sha256:..."
   },
   "authority": "direct|corroborated|indirect|inferred",
-  "confidence": 0.96,
   "verifiedBy": ["runtime-owner", "call-stack"]
 }
 ```
+
+Do not attach numeric confidence or probability values to facts or hypotheses. `truth` plus `authority` carry the confidence; an invented number is a `GUESS` disguised as measurement.
 
 Implementation-critical values should not rely only on `inferred` evidence unless the replay route is explicitly `BEHAVIOR_REBUILD`.
 

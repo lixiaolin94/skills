@@ -58,15 +58,28 @@ Write a small card before the full Manifest:
   "targetSet": [],
   "alternatives": [],
   "effectBoundary": "surface-only|surface-plus-dom|page-coupled|route-coupled",
-  "frameworkHypotheses": [],
-  "platformHypotheses": [],
+  "hypotheses": [
+    {
+      "id": "hyp-1",
+      "statement": "surface-1 is rendered by a Three.js renderer on the main thread",
+      "status": "untested",
+      "evidenceFor": [],
+      "evidenceAgainst": [],
+      "truth": "GUESS"
+    }
+  ],
   "interactions": [],
   "scopeRisk": "low|medium|high",
   "blockingUnknowns": [],
   "nextProbe": {
     "type": "surface-ablation|runtime-owner|platform-api|frame-capture|preload|source-map|bundle-slice",
     "target": "surface-1",
-    "resolves": ["owner", "framework"]
+    "resolves": ["owner"],
+    "distinguishes": ["hyp-1", "hyp-2"],
+    "expectedOutcomes": [
+      { "observation": "renderer.domElement === surface-1 canvas", "eliminates": ["hyp-2"] },
+      { "observation": "no runtime renderer owns surface-1", "eliminates": ["hyp-1"] }
+    ]
   }
 }
 ```
@@ -199,7 +212,7 @@ Combine blockers into one note.
 - Before attribution completes, `lockStatus` can only be `unlocked` or `provisional`.
 - `attributed` allows owner/backend/source probes bound to `nextProbe`; it does not allow deep source or bundle work.
 - `locked` requires a non-empty `gateDecision.requiredEvidence` checklist in `scout-card.json`; every item must be an evidence item with `status`, `evidenceId`, `path`, `truth`, and `notes`.
-- `frameworkHypotheses` and `platformHypotheses` are candidates, not conclusions.
-- `nextProbe` has one main action.
+- `hypotheses` entries are candidates, not conclusions; `supported` status alone never satisfies a lock criterion without target-bound evidence.
+- `nextProbe` has one main action, resolves one primary unknown, and declares which hypotheses it distinguishes and what each outcome eliminates.
 - Raw DOM, screenshots, network logs, and frame captures go into files and are referenced by path.
 - After lock, fill `targetSet`, excluded alternatives, lock evidence, and primary route.

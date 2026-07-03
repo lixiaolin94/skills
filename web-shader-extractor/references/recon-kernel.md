@@ -69,7 +69,7 @@ Perform these actions first and persist artifacts under the output directory:
 5. Probe minimal pointer, scroll, and resize interactions to identify coupling.
 6. Identify the target surface group context, owner thread/frame/worker, and creation source. If needed, reload once with a preload probe.
 7. Accept platform, framework, runtime, and source evidence only when it is bound to the target surface group.
-8. Select exactly one next evidence path and write `scout-card.json`.
+8. Seed the hypothesis ledger: one hypothesis per plausible surface/owner/framework explanation still alive after the steps above. Select exactly one next probe against that set and write `scout-card.json`.
 9. Before `TARGET_LOCKED`, do not download or deobfuscate full bundles. Use source maps, public structured definitions, or narrow bundle slices only when they resolve the next unknown.
 
 ## Gate Semantics
@@ -127,18 +127,49 @@ Do not replace artifact fields with prose in the final answer.
 
 `run-state.json.gateStatus` copies the artifact status. It is not a separate evidence source. Update it only after the corresponding gate artifact passes.
 
-## Working Rule
+## Hypothesis Ledger
 
-At every step, write down the unknown being reduced. A valid next action has this shape:
+Keep competing explanations as explicit hypotheses in `scout-card.json.hypotheses`, one entry each:
+
+```json
+{
+  "id": "hyp-1",
+  "statement": "surface-1 is rendered by a Three.js renderer on the main thread",
+  "status": "untested",
+  "allowedStatus": ["untested", "supported", "contradicted"],
+  "evidenceFor": [],
+  "evidenceAgainst": [],
+  "truth": "GUESS"
+}
+```
+
+Ledger rules:
+
+- Status changes only through evidence IDs. No evidence ID, no status change.
+- No numeric probabilities or confidence scores. Use `status` plus `SOURCE`/`PARTIAL`/`GUESS`. A fabricated number is a `GUESS` disguised as measurement.
+- A `supported` hypothesis with only `PARTIAL`/`GUESS` evidence is still not a conclusion. Conclusions require `references/target-lock.md` binding criteria.
+- When new evidence contradicts a `supported` hypothesis, flip it to `contradicted` and re-open the alternatives it had eliminated. Do not tune the model to keep it alive.
+
+## Discriminating Probe Rule
+
+Evidence strength is discrimination: an observation consistent with many live hypotheses is weak; an observation expected under one hypothesis and not the others is strong.
+
+Every `nextProbe` must therefore declare, before execution:
+
+- which live hypotheses it distinguishes (two or more, or one hypothesis vs its negation)
+- what each possible outcome would eliminate
 
 ```text
 state: SURFACE_ATTRIBUTION
-unknown: whether canvas#hero or iframe[0] owns the target distortion
-action: hide/freeze both candidates for one frame window and compare target crop
-expected evidence: ablation impact by surface
+distinguishes: hyp-1 (canvas#hero owns the distortion) vs hyp-2 (iframe[0] owns it)
+action: hide/freeze each candidate for one frame window and compare target crop
+outcome A (crop unchanged when hero hidden): eliminates hyp-1
+outcome B (crop loses distortion when hero hidden): eliminates hyp-2
 ```
 
-If the action has no target unknown, reject it.
+If you cannot state the outcome-to-elimination mapping in advance, the action is not a probe; replace it.
+An action whose every outcome eliminates nothing (confirms what all live hypotheses already predict) is wasted budget; reject it.
+Prefer the cheapest probe that splits the current live hypothesis set; after each probe, update the ledger, then choose the next probe against the surviving set. This chain is the recon loop.
 
 ## Evidence Chain
 
@@ -174,10 +205,10 @@ Default to autonomous execution. Ask only for product scope changes or external 
 Observe
 -> Compare against current Gate / Manifest
 -> Classify failure or unknown
--> Choose the lowest-cost action that reduces an unknown
+-> Choose the cheapest probe that splits the live hypothesis set
 -> Execute
--> Persist evidence and state
--> Measure progress
+-> Update ledger, persist evidence and state
+-> Measure progress by hypotheses eliminated and unknowns closed
 ```
 
 "Try again" is not a valid action unless something changes.

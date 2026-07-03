@@ -38,7 +38,9 @@ Use it only when the task has a shader/canvas target.
 ## Core Rules
 
 - Target-bound before framework-bound: a global Three.js, platform, or shader signature is only a hypothesis until tied to the target surface group.
+- Probes must discriminate: before running a probe, state which live hypotheses it separates and what each outcome eliminates. Evidence consistent with every candidate is weak; evidence only one candidate predicts is strong.
 - Evidence before implementation: source, runtime objects, frame captures, source maps, and public structured definitions outrank visual fitting.
+- No fabricated numbers: confidence is expressed with hypothesis status and `SOURCE`/`PARTIAL`/`GUESS`, never invented probabilities or scores.
 - Baseline before projectization: never overwrite a verified baseline for cleanup, simplification, or native conversion.
 - Honest labels: implementation-critical facts are `SOURCE`, `PARTIAL`, or `GUESS`; unlabeled values are treated as `GUESS`.
 - No compensation tuning: do not adjust brightness, time, color, offsets, or noise to mask missing pipeline evidence.
@@ -48,21 +50,7 @@ Use it only when the task has a shader/canvas target.
 
 ## State Router
 
-Use the Recon Kernel state flow:
-
-```text
-INTAKE -> CAPABILITY_SNAPSHOT -> QUICK_SCOUT -> SURFACE_ATTRIBUTION
--> TARGET_LOCK_GATE
-   - provisional/failed -> REFINE_SCOUT
-   - attributed -> targeted owner/backend/source probe -> TARGET_LOCK_GATE
-   - locked -> SCOPE_CHECK
--> TRACE_ROUTE_SELECT -> SOURCE_TRACE -> CAPTURE_MINIMUM_TRUTH
--> REPLAY_READY_GATE
-   - not ready -> SOURCE_TRACE / CAPTURE_MINIMUM_TRUTH
-   - ready -> RAW_REPLAY
--> BASELINE_RUN -> BASELINE_VERIFY
--> BASELINE_VERIFIED -> PROJECTIZE -> PROJECT_VERIFY -> PACKAGE
-```
+The full state machine, branches, and gate semantics live in `references/recon-kernel.md`. The gate order is fixed:
 
 `TARGET_LOCKED` must precede deep source/bundle work.
 Before lock, only narrow source probes tied to `nextProbe` are allowed.

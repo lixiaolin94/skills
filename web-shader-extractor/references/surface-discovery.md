@@ -57,30 +57,27 @@ canvas#background
 
 Use `targetSet` in Scout Card and Manifest. Do not force the result into a single `targetCanvas`.
 
-## Ranking And Attribution
+## Attribution As Hypothesis Elimination
 
-Rank candidates for attribution by:
+Treat each candidate (or candidate group) as a hypothesis in the ledger: "this surface set produces the requested visual." Attribution is done when probes have eliminated every alternative, not when one candidate merely looks plausible.
 
-- overlap with the requested visual area
-- frame-to-frame pixel change
-- z-order and clipping relationship
-- pointer/scroll/resize coupling
-- route persistence
-- owner traceability
+Apply the discriminating probe rule from `references/recon-kernel.md`: an observation shared by many candidates (largest canvas, animates continuously, framework-looking dataset attribute, bundle contains shader strings) discriminates nothing and is weak by definition. An observation only one hypothesis predicts is strong — for example, the target crop loses the distortion only when `surface-2` is hidden, or scroll changes uniforms on `surface-1` and the visual phase follows.
 
-Attribution scoring dimensions:
+Record per-candidate observation dimensions to decide which probe to run next:
 
-- `visualCoverage`: how much the surface overlaps the target visual region
-- `temporalActivity`: how much the surface changes across sampled frames
+- `visualCoverage`: overlap with the target visual region
+- `temporalActivity`: frame-to-frame change on the target crop
 - `interactionCoupling`: pointer, scroll, resize, or route changes affect the target
-- `sectionCoupling`: relationship to page sections, sticky positioning, masks, and clips
+- `sectionCoupling`: page sections, sticky positioning, masks, and clips
 - `routePersistence`: whether the surface persists across route changes
-- `ablationImpact`: what target pixels/behaviors disappear when the surface is hidden or frozen
+- `ablationImpact`: what target pixels/behaviors disappear when hidden or frozen
 - `ownershipEvidence`: how well context and renderer owner can be traced
+
+These dimensions are heuristics for probe ordering. Only `ablationImpact`-class evidence (the effect disappears with exactly this surface set) settles attribution; the target may also be a group — a small overlay, mask, or DOM layer can be essential even when coverage is tiny.
 
 ## Attribution Actions
 
-Use the lowest-cost action that resolves the current unknown:
+Use the cheapest probe that splits the remaining candidates:
 
 1. style, bounds, and visibility observation
 2. multi-frame diff on a target crop
@@ -93,21 +90,3 @@ Use the lowest-cost action that resolves the current unknown:
 9. owner stack or preload probe
 
 All modifications are brief, reversible, and observational. Do not persist source-site changes.
-
-## Evidence Examples
-
-Strong attribution examples:
-
-- target crop loses the distortion only when `surface-2` is hidden
-- scroll progress changes uniforms on `surface-1` and the visual phase changes accordingly
-- DOM mask plus canvas output together create the visible target; either alone is incomplete
-- `OffscreenCanvas` worker owns the only context whose frame changes match the target crop
-
-Weak attribution examples:
-
-- candidate is the largest canvas
-- candidate animates continuously
-- candidate has a framework-looking dataset attribute
-- bundle contains shader strings but no target binding exists
-
-Area alone is weak evidence. A small overlay, mask, or DOM layer may be essential to the target effect.
