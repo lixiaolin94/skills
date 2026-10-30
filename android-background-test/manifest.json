@@ -1,0 +1,39 @@
+{
+  "name": "android-background-test",
+  "version": "0.2.0-dev",
+  "protocol": 1,
+  "capabilities": [
+    "offline_verify",
+    "local_doctor",
+    "device_session",
+    "screenshot",
+    "input",
+    "text"
+  ],
+  "runtime": {
+    "path": "runtime/server.jar",
+    "sha256": "82d2bb0e9f2dc21ba3ea8c59cbe420cae35614a199cb6c3fa471995e3fe26731",
+    "format": "dex-jar",
+    "entrypoint": "dev.androidbackgroundtest.Server",
+    "requiresPackageInstall": false,
+    "dexMinApi": 31
+  },
+  "build": {
+    "sourceSha256": "b16008eefffa3abaf56aa269d1a2872f31a988dfb9c9a7b7d2e354e39474ef36",
+    "androidJar": "android-37.1",
+    "javac": "javac 25.0.3",
+    "d8": "D8 9.2.4-dev (build 084a89126ae0596c599143df57a654646af28313 from go/r8bot (luci-r8-custom-ci-archive-0-4u1w))"
+  },
+  "testedDevices": [
+    {
+      "model": "nubia NX888J",
+      "android": "17",
+      "build": "2.7.0.0-ut test-keys"
+    },
+    {
+      "model": "OPPO PLG110",
+      "android": "17",
+      "build": "PLG110_17.0.0.105(CN01)"
+    }
+  ]
+}

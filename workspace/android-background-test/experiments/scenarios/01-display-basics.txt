@@ -1,0 +1,23 @@
+# Bare virtual display: create, launch, screenshot, input, release; main display must stay untouched.
+probe flags
+host dumpsys window | grep -E "mCurrentFocus|mTopFocusedDisplayId"
+probe create 720 1600 320 OWN_CONTENT_ONLY,SUPPORTS_TOUCH,DESTROY_CONTENT_ON_REMOVAL,TRUSTED,OWN_FOCUS,STEAL_TOP_FOCUS_DISABLED,TOUCH_FEEDBACK_DISABLED full
+probe state
+host am start --display {display} -W -n com.obric.calculator/.Calculator
+wait 1.5
+host dumpsys window | grep -E "mCurrentFocus|mTopFocusedDisplayId"
+probe shot /data/local/tmp/android-background-test/01-a.png
+probe shot /data/local/tmp/android-background-test/01-b.png
+host input -d {display} tap 90 1180
+host input -d {display} tap 270 1180
+wait 0.5
+host dumpsys window | grep -E "mCurrentFocus|mTopFocusedDisplayId"
+probe shot /data/local/tmp/android-background-test/01-c.png
+pull /data/local/tmp/android-background-test/01-a.png 01-a.png
+pull /data/local/tmp/android-background-test/01-c.png 01-c.png
+host dumpsys activity recents | grep -E "Recent #" | head -4
+probe close
+wait 1
+host dumpsys activity recents | grep -E "Recent #" | head -4
+host dumpsys window | grep -E "mCurrentFocus|mTopFocusedDisplayId"
+host rm /data/local/tmp/android-background-test/01-a.png /data/local/tmp/android-background-test/01-b.png /data/local/tmp/android-background-test/01-c.png

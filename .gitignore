@@ -1,0 +1,5 @@
+.DS_Store
+workspace/*
+!workspace/android-background-test/
+android-background-test/**/__pycache__/
+android-background-test/**/*.pyc
