@@ -17,14 +17,14 @@
   ],
   "runtime": {
     "path": "runtime/server.jar",
-    "sha256": "bb9efa9f4a2acace04cd4e64b050ba8c34854f19b5ec0190756826479480103d",
+    "sha256": "1f1e6b538cd16bf53b4466b5be6afaf1050fd64a2e5ec1874706c4487c3fad2c",
     "format": "dex-jar",
     "entrypoint": "dev.androidbackgroundtest.Server",
     "requiresPackageInstall": false,
     "dexMinApi": 31
   },
   "build": {
-    "sourceSha256": "26e1cb9c12779698403e646ec8aa8f06927457203e9be08a28ad15640302857b",
+    "sourceSha256": "fd8139710d92cf77986e604c400bc2ac7d145f10b6ff955873a8866dd27f1033",
     "androidJar": "android-37.1",
     "javac": "javac 25.0.4",
     "d8": "D8 9.2.4-dev (build 084a89126ae0596c599143df57a654646af28313 from go/r8bot (luci-r8-custom-ci-archive-0-4u1w))"

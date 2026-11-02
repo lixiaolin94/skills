@@ -390,7 +390,13 @@ final class Session {
         return new int[] {(int) Math.round(mean), (int) Math.round(Math.sqrt(Math.max(0, squares / count - mean * mean)))};
     }
 
-    /** Draws a box and its ref on every visible interactive element. */
+    /** 3x5 pixel glyphs for 0-9, rows top to bottom, 3 bits per row. */
+    private static final int[] DIGITS = {
+        0b111101101101111, 0b010110010010111, 0b111001111100111, 0b111001111001111, 0b101101111001001,
+        0b111100111001111, 0b111100111101111, 0b111001001001001, 0b111101111101111, 0b111101111001111,
+    };
+
+    /** Draws a box and its ref number on every visible interactive element. */
     private Bitmap annotate(Bitmap source, List<Accessibility.Node> nodes) {
         Bitmap bitmap = source.copy(Bitmap.Config.ARGB_8888, true);
         android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
@@ -401,18 +407,28 @@ final class Session {
         box.setColor(0xFFFF2D7A);
         android.graphics.Paint tag = new android.graphics.Paint();
         tag.setColor(0xE6FF2D7A);
-        android.graphics.Paint ink = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        // No text drawing: app_process has no default Typeface and Paint text aborts the process.
+        // The tag shows the ref number (12 for e12) in a built-in 3x5 pixel font.
+        android.graphics.Paint ink = new android.graphics.Paint();
         ink.setColor(0xFFFFFFFF);
-        ink.setTextSize(16 * scale);
-        ink.setFakeBoldText(true);
+        float dot = Math.max(2, 3 * scale);
         for (Accessibility.Node node : nodes) {
             if (!node.visible || !node.interactive()) continue;
             float l = sx(node.bounds.left), t = sy(node.bounds.top), r = sx(node.bounds.right), b = sy(node.bounds.bottom);
             canvas.drawRect(l, t, r, b, box);
-            float w = ink.measureText(node.ref) + 6 * scale;
-            float h = 20 * scale;
+            String number = node.ref.substring(1);
+            float w = number.length() * 4 * dot + dot, h = 7 * dot;
             canvas.drawRect(l, t, l + w, t + h, tag);
-            canvas.drawText(node.ref, l + 3 * scale, t + h - 5 * scale, ink);
+            for (int i = 0; i < number.length(); i++) {
+                int glyph = DIGITS[number.charAt(i) - '0'];
+                for (int row = 0; row < 5; row++) {
+                    for (int col = 0; col < 3; col++) {
+                        if ((glyph >> (14 - row * 3 - col) & 1) == 0) continue;
+                        float x = l + dot + (i * 4 + col) * dot, y = t + dot + row * dot;
+                        canvas.drawRect(x, y, x + dot, y + dot, ink);
+                    }
+                }
+            }
         }
         return bitmap;
     }

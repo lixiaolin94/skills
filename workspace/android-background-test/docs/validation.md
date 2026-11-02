@@ -111,3 +111,21 @@ DEX 在 Android 上运行、shell 身份初始化、独立屏、截图、输入�
   - 每次 layout 新建并断开无障碍连接要花多久。
   - 和用户已开启的读屏、密码管理器同时存在时，是否会互相影响。
 - 密度修复（会话屏与主屏同尺寸同密度）也还没有在真机上验证。
+
+## 真机验证第 3 轮（2026-11-02，nubia NX888J，2.7.0.0-ut，wm density 覆盖 520，亮屏解锁）
+
+- SOURCE：计算器（com.obric.calculator）：
+  - `layout` 返回 27 个元素，文字、id、坐标都正确。
+  - `tap --target "text=7"` / `"id=digit8"` / `"desc=等于"` 都点中了，结果为 7+8=15。
+  - 输入后再用旧 ref，返回 `stale_observation`；重新 layout 后，同一个 ref 可以用。
+  - `desc=删除` 命中两个，返回 `element_ambiguous` 并附两个候选。
+  - `--settle` 稳定后返回的新增、消失变化合理。
+- SOURCE：`screenshot --annotate` 第一次运行时，协调进程 SIGABRT（`Assertion failed: src == nullptr && gDefaultTypeface == nullptr`，栈在 `Paint.measureText`）。原因是 app_process 里没有默认 Typeface，Paint 一画文字就中止进程。改为内置 3×5 点阵画 ref 编号后正常：框和编号与按钮完全对齐。
+- SOURCE：密度修复有效。会话屏改为与主屏同尺寸同密度后，计算器右上角菜单按钮和主屏上的尺寸一致，不再放大。
+- SOURCE：便签（com.obric.notes）：
+  - `--settle` 能列出新建便签页里的两个 EditText。
+  - `text --target "text=标题,class=EditText"` 能写入中文。
+  - `class=EditText` 命中两个，返回 `element_ambiguous`。
+  - `--clip`、`--format jpeg`（33KB，PNG 为 151KB）正常。
+- SOURCE：`close --reason done` 后，主屏前台仍是用户自己的应用，最近任务里没有残留。崩溃那次留下的会话在下次启动时被清理。
+- 仍未验证：敏感应用确认（没有在真机上打开过敏感应用）、`scroll --until`、`blankFrame`（没有用防截屏应用测）、OPPO 上的密度表现。
