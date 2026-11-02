@@ -39,8 +39,6 @@ final class Coordinator {
     private static final int MAX_SESSIONS = 32;
     private static final int MAX_REQUEST_BYTES = 1 << 20;
     private static final int DEFAULT_WIDTH = 720;
-    private static final int DEFAULT_HEIGHT = 1600;
-    private static final int DEFAULT_DENSITY = 320;
 
     private final Map<String, Session> sessions = new LinkedHashMap<>();
     private final SecureRandom random = new SecureRandom();
@@ -174,6 +172,12 @@ final class Coordinator {
                 payload = (byte[]) result[1];
             } catch (Session.Failure failure) {
                 response = error(failure.code, failure.getMessage());
+                if (failure.extra != null) {
+                    for (java.util.Iterator<String> keys = failure.extra.keys(); keys.hasNext(); ) {
+                        String key = keys.next();
+                        if (!response.has(key)) response.put(key, failure.extra.get(key));
+                    }
+                }
             } catch (Exception unexpected) {
                 log("request failed: " + Log.getStackTraceString(unexpected));
                 response = error("internal", String.valueOf(unexpected));
@@ -233,14 +237,12 @@ final class Coordinator {
             switch (op) {
                 case "status": return reply(sessionState(session), null);
                 case "close":
-                    session.end("closed");
+                    session.end(closeReason(request.optString("reason", "closed")));
                     return reply(sessionState(session), null);
-                case "screenshot": {
-                    byte[] png = session.screenshot();
-                    JSONObject json = sessionState(session);
-                    json.put("width", session.width);
-                    json.put("height", session.height);
-                    return reply(json, png);
+                case "screenshot": return screenshot(session, request);
+                case "layout": {
+                    JSONObject json = merge(sessionState(session), session.layout(request.optBoolean("full")));
+                    return reply(json, null);
                 }
                 case "resolve": return reply(resolve(session, request), null);
                 default: break;
@@ -251,22 +253,46 @@ final class Coordinator {
                 json.put("error", "interrupted");
                 return reply(json, null);
             }
+            session.checkObservation(request.optString("observation", null));
+            JSONObject result = new JSONObject();
+            Map<String, String> target = selector(request.optJSONObject("target"));
             switch (op) {
                 case "tap":
-                    session.tap((float) request.getDouble("x"), (float) request.getDouble("y"));
+                    if (target != null) {
+                        result = session.tapTarget(target);
+                    } else if (request.has("ref")) {
+                        float[] center = session.refCenter(request.getString("ref"));
+                        session.tap(center[0], center[1]);
+                    } else {
+                        session.tap((float) request.getDouble("x"), (float) request.getDouble("y"));
+                    }
                     break;
                 case "swipe":
                     session.swipe((float) request.getDouble("x1"), (float) request.getDouble("y1"),
                             (float) request.getDouble("x2"), (float) request.getDouble("y2"),
                             request.optLong("durationMs", 300));
                     break;
+                case "scroll":
+                    result = session.scroll(request.getString("direction"), selector(request.optJSONObject("until")),
+                            Math.max(1, Math.min(30, request.optInt("max", 8))));
+                    break;
                 case "key":
                     session.key(request.getString("key"));
                     break;
                 case "text": {
-                    JSONObject json = sessionState(session);
-                    json.put("text", session.text(request.getString("value")));
-                    return reply(json, null);
+                    String value = request.getString("value");
+                    if (target != null) {
+                        result = session.textTarget(target, value);
+                    } else {
+                        if (request.has("ref")) {
+                            float[] center = session.refCenter(request.getString("ref"));
+                            session.tap(center[0], center[1]);
+                            Thread.sleep(300);
+                        }
+                        String now = session.text(value);
+                        if (now != null) result.put("text", now);
+                    }
+                    break;
                 }
                 case "launch":
                     launchOrConflict(session);
@@ -274,8 +300,62 @@ final class Coordinator {
                 default:
                     throw new Session.Failure("bad_request", "unknown op " + op);
             }
-            return reply(sessionState(session), null);
+            if (request.optBoolean("settle") && session.interruption == null) {
+                result.put("settle", session.settle());
+            }
+            return reply(merge(sessionState(session), result), null);
         }
+    }
+
+    private static final java.util.Set<String> CLOSE_REASONS = new java.util.HashSet<>(
+            java.util.Arrays.asList("closed", "done", "app_blocked", "sensitive_step", "user_stopped"));
+
+    private static String closeReason(String reason) throws Session.Failure {
+        if (!CLOSE_REASONS.contains(reason)) throw new Session.Failure("bad_request", "unknown close reason " + reason);
+        return reason;
+    }
+
+    private static Map<String, String> selector(JSONObject json) throws Exception {
+        if (json == null || json.length() == 0) return null;
+        Map<String, String> selector = new LinkedHashMap<>();
+        for (java.util.Iterator<String> keys = json.keys(); keys.hasNext(); ) {
+            String key = keys.next();
+            if (!key.equals("text") && !key.equals("id") && !key.equals("desc") && !key.equals("class")) {
+                throw new Session.Failure("bad_request", "selector keys are text, id, desc, class");
+            }
+            selector.put(key, json.getString(key));
+        }
+        return selector;
+    }
+
+    private static JSONObject merge(JSONObject base, JSONObject extra) throws Exception {
+        for (java.util.Iterator<String> keys = extra.keys(); keys.hasNext(); ) {
+            String key = keys.next();
+            base.put(key, extra.get(key));
+        }
+        return base;
+    }
+
+    private Object[] screenshot(Session session, JSONObject request) throws Exception {
+        Session.ShotOptions options = new Session.ShotOptions();
+        options.annotate = request.optBoolean("annotate");
+        options.jpeg = "jpeg".equals(request.optString("format", "png"));
+        options.quality = request.optInt("quality", 85);
+        JSONArray clip = request.optJSONArray("clip");
+        if (clip != null) {
+            if (clip.length() != 4) throw new Session.Failure("bad_request", "clip is x,y,w,h");
+            options.clip = new int[] {clip.getInt(0), clip.getInt(1), clip.getInt(2), clip.getInt(3)};
+        }
+        Session.Shot shot = session.screenshot(options);
+        JSONObject json = sessionState(session);
+        json.put("width", session.width);
+        json.put("height", session.height);
+        json.put("format", options.jpeg ? "jpeg" : "png");
+        json.put("observation", shot.observation);
+        if (clip != null) json.put("clip", clip);
+        if (shot.blank) json.put("blankFrame", shot.dark ? "dark" : "uniform");
+        if (shot.nodes != null) json.put("nodes", shot.nodes);
+        return reply(json, shot.data);
     }
 
     private static Object[] reply(JSONObject json, byte[] payload) throws Exception {
@@ -330,9 +410,14 @@ final class Coordinator {
             throw new Session.Failure("user_unsupported", "only the current foreground user " + user + " is supported");
         }
         if (Platform.deviceLocked()) throw new Session.Failure("device_locked", "unlock the phone and keep the screen on");
+        checkSensitive(component.getPackageName(), request);
+        // The session display copies the main display's size and density: apps that read density from their
+        // Application resources get the main display's value, so any other density renders them scaled up.
+        // Screenshots and coordinates use a smaller space with the same aspect ratio.
+        int[] main = Platform.mainDisplayMetrics();
         int width = request.optInt("width", DEFAULT_WIDTH);
-        int height = request.optInt("height", DEFAULT_HEIGHT);
-        int density = request.optInt("density", DEFAULT_DENSITY);
+        if (width < 100 || width > main[0]) throw new Session.Failure("bad_request", "width must be 100.." + main[0]);
+        int height = Math.round(width * (float) main[1] / main[0]);
         Session session;
         synchronized (sessions) {
             int live = 0;
@@ -344,12 +429,13 @@ final class Coordinator {
                 }
             }
             if (live >= MAX_SESSIONS) throw new Session.Failure("display_limit", "at most " + MAX_SESSIONS + " sessions");
-            session = new Session(randomHex(8), randomHex(16), component, user, width, height, handler);
+            session = new Session(randomHex(8), randomHex(16), component, user, width, height, main,
+                    !request.optBoolean("noAccessibility"), handler);
             sessions.put(session.id, session);
         }
         synchronized (session) {
             try {
-                session.createDisplay(density);
+                session.createDisplay();
                 launchOrConflict(session);
             } catch (Exception failure) {
                 session.end("open_failed");
@@ -362,6 +448,36 @@ final class Coordinator {
             json.put("token", session.token);
             return json;
         }
+    }
+
+    /** Label words that mark finance apps; the client adds its own package list as {@code sensitive}. */
+    private static final String[][] SENSITIVE_LABELS = {
+        {"银行", "银行"}, {"证券", "证券"}, {"支付", "支付"}, {"钱包", "支付"}, {"保险", "保险"},
+        {"基金", "理财"}, {"理财", "理财"}, {"信用卡", "银行"},
+    };
+
+    /** Refuses apps known to police automation until the user has accepted the account risk. */
+    private static void checkSensitive(String packageName, JSONObject request) throws Exception {
+        if (request.optBoolean("acceptRisk")) return;
+        String category = request.optString("sensitive", "");
+        String label = Platform.appLabel(packageName);
+        if (category.isEmpty() && label != null) {
+            for (String[] word : SENSITIVE_LABELS) {
+                if (label.contains(word[0])) {
+                    category = word[1];
+                    break;
+                }
+            }
+        }
+        if (category.isEmpty()) return;
+        String name = label == null ? packageName : label + "（" + packageName + "）";
+        JSONObject extra = new JSONObject();
+        extra.put("category", category);
+        if (label != null) extra.put("appLabel", label);
+        extra.put("askUser", name + "属于" + category + "类应用。这类应用常会识别自动化操作（无障碍、模拟点击、后台虚拟屏），"
+                + "轻则拒绝运行或弹出安全提示，重则对你的账号做风控（强制下线、限制功能甚至封号），后果落在你的真实账号上，"
+                + "Agent 无法撤销。建议改用测试账号或测试机。仍要继续测试吗？");
+        throw new Session.Failure("sensitive_app", packageName + " is a " + category + " app; ask the user first", extra);
     }
 
     /** Launches unless that would move a task the user already has; then asks first. */

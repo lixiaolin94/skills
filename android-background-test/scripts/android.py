@@ -20,7 +20,7 @@ import zipfile
 
 NAME = "android-background-test"
 # 脚本与手机端服务之间的协议版本；不一致说明脚本和 runtime 来自不同构建。
-PROTOCOL = 1
+PROTOCOL = 2
 DEVICE_CAPABILITY = "device_session"
 SOCKET_NAME = "android-background-test"
 REMOTE_DIR = "/data/local/tmp/android-background-test"
@@ -31,9 +31,120 @@ REFUSED = {"package_busy", "display_limit", "coordinator_incompatible", "device_
            "user_unsupported", "not_supported", "stale_conflict", "uiautomation_busy", "no_focused_editable",
            "set_text_failed", "session_ended", "out_of_bounds", "input_rejected", "launch_failed",
            "display_permission_denied", "display_create_failed", "no_frame", "no_task", "busy", "forbidden",
-           "text_unsupported"}
+           "text_unsupported", "sensitive_app", "stale_observation", "unknown_ref", "element_not_found",
+           "element_ambiguous", "accessibility_disabled", "layout_unavailable"}
 DEVICE_ERRORS = {"adb_missing", "device_offline", "transport", "session_lost", "coordinator_start_failed",
                  "deploy_failed", "coordinator_unreachable"}
+
+
+# 已知会识别自动化、并可能对账号做风控的应用（人工整理，不完整）。命中时 open 先让用户确认风险。
+SENSITIVE_PACKAGES = {
+    "com.tencent.mm": "社交与支付", "com.tencent.mobileqq": "社交", "com.tencent.wework": "社交",
+    "com.eg.android.AlipayGphone": "支付", "com.unionpay": "支付", "com.huawei.wallet": "支付",
+    "com.taobao.taobao": "电商", "com.tmall.wireless": "电商", "com.jingdong.app.mall": "电商",
+    "com.xunmeng.pinduoduo": "电商", "com.sankuai.meituan": "电商", "com.sankuai.meituan.takeoutnew": "电商",
+    "me.ele": "电商", "com.ss.android.ugc.aweme": "社交", "com.sina.weibo": "社交",
+    "com.chinamworld.main": "银行", "com.android.bankabc": "银行", "com.icbc": "银行",
+    "com.chinamworld.bocmbci": "银行", "cmb.pb": "银行", "com.bankcomm.Bankcomm": "银行",
+    "com.yitong.mbank.psbc": "银行", "com.ecitic.bank.mobile": "银行", "com.cib.cibmb": "银行",
+    "com.spdbccc.app": "银行", "com.webank.wemoney": "银行", "com.tencent.qqstock": "证券",
+    "com.hexin.plat.android": "证券", "com.eastmoney.android.berlin": "证券", "com.antfortune.wealth": "理财",
+}
+SENSITIVE_SEGMENTS = ("bank", "securities", "wallet", "alipay", "unionpay")
+
+# 应用拦截或风控时常见的提示语（人工整理，只作提示，需看截图确认）。
+RISK_KEYWORDS = ("环境异常", "登录环境", "安全风险", "存在风险", "风险提示", "安全提示", "请关闭", "关闭无障碍",
+                 "关闭辅助", "无障碍服务已开启", "检测到", "自动化", "模拟点击", "脚本", "外挂", "插件", "非官方",
+                 "被迫下线", "下线通知", "已下线", "账号异常", "账号存在", "异常登录", "操作频繁", "设备异常",
+                 "录屏", "屏幕共享", "暂不支持", "无法使用")
+
+# 每个错误码给用户看的中文说明：发生了什么、为什么、可以怎么做。Agent 可直接转述。
+USER_MESSAGES = {
+    "sensitive_app": "目标属于会识别自动化的敏感应用，继续操作可能导致账号被风控，需要你明确同意。",
+    "package_busy": "这个应用正被另一个测试会话占用，为避免互相干扰没有启动。",
+    "display_limit": "手机上同时进行的测试会话已达上限，请先结束不用的会话。",
+    "coordinator_incompatible": "手机上正在运行旧版本的测试服务且仍有会话，为不打断它们没有替换。",
+    "device_locked": "手机已锁屏或息屏，后台屏停止渲染；请解锁并保持亮屏。",
+    "user_active": "你正在手机上使用这个应用，Agent 不会从你手里拿走，会话已结束。",
+    "user_unsupported": "只支持当前前台用户，不能在其他用户或工作资料里测试。",
+    "not_supported": "这种打断无法由 Agent 处理。",
+    "stale_conflict": "这次询问已失效（可能已超时或已处理）。",
+    "uiautomation_busy": "系统无障碍接口正被其他工具占用，为不打断它没有抢占，所以无法读取界面或输入文字。",
+    "no_focused_editable": "没有找到获得焦点的输入框，需要先点中输入框。",
+    "set_text_failed": "输入框拒绝写入文字；可能是应用的安全键盘或防自动化保护（常见于密码、支付输入框）。",
+    "session_ended": "会话已经结束。",
+    "out_of_bounds": "坐标超出后台屏范围。",
+    "input_rejected": "系统拒绝了注入的输入事件。",
+    "launch_failed": "应用启动失败，可能是入口不对、应用拒绝在后台屏运行或已被系统禁止。",
+    "display_permission_denied": "系统不允许创建测试用的后台屏，这台手机暂不支持。",
+    "display_create_failed": "创建后台屏失败。",
+    "no_frame": "后台屏 3 秒内没有画面；可能是应用卡住、手机息屏，或应用拒绝在后台屏渲染。",
+    "no_task": "后台屏上没有应用了（应用已退出或被关闭），可以重新 launch。",
+    "busy": "手机上仍有测试会话在运行。",
+    "forbidden": "身份校验失败，拒绝操作。",
+    "text_unsupported": "这台手机的系统不支持后台写入文字。",
+    "stale_observation": "界面在上次查看后可能已经变化，为避免点错没有执行；需要重新截图或读取界面。",
+    "unknown_ref": "引用的界面元素不在最近一次读取的结果里。",
+    "element_not_found": "界面上没有找到要操作的元素。",
+    "element_ambiguous": "界面上有多个元素符合条件，为避免点错没有执行。",
+    "accessibility_disabled": "本会话按你的要求关闭了无障碍连接，无法读取控件或输入文字，只能截图和点击坐标。",
+    "layout_unavailable": "读不到后台屏的界面结构；应用可能屏蔽了无障碍读取，可以改用截图。",
+    "adb_missing": "电脑上找不到 adb。",
+    "device_offline": "手机未连接或未授权 USB 调试。",
+    "transport": "与手机的连接出错。",
+    "session_lost": "会话已不存在（已关闭、超时或手机端服务已退出）。",
+    "coordinator_start_failed": "手机端测试服务没有启动成功。",
+    "deploy_failed": "手机端测试服务的文件校验失败，没有启动。",
+    "coordinator_unreachable": "连不上手机端测试服务。",
+    "interrupted": "会话被打断，需要先询问你。",
+}
+
+
+def sensitive_category(package):
+    if package in SENSITIVE_PACKAGES:
+        return SENSITIVE_PACKAGES[package]
+    for segment in package.lower().split("."):
+        if any(word in segment for word in SENSITIVE_SEGMENTS):
+            return "金融"
+    return None
+
+
+def parse_selector(text):
+    """把 "text=确定,class=Button" 解析为 dict；键只能是 text、id、desc、class。"""
+    selector = {}
+    for part in text.split(","):
+        key, sep, value = part.partition("=")
+        key = key.strip()
+        if not sep or key not in ("text", "id", "desc", "class") or not value.strip():
+            raise Failure("bad_request", "selector must look like text=确定 or id=email,class=EditText")
+        selector[key] = value.strip()
+    return selector
+
+
+def risk_signals(response):
+    """在返回的界面文字里查找风控提示语。"""
+    texts = []
+
+    def gather(node):
+        for key in ("text", "desc", "label", "hint"):
+            if isinstance(node.get(key), str):
+                texts.append(node[key])
+
+    for node in response.get("nodes") or []:
+        gather(node)
+    settle = response.get("settle") or {}
+    for node in settle.get("nodes") or (settle.get("changes") or {}).get("added") or []:
+        gather(node)
+    for key in ("target",):
+        if isinstance(response.get(key), dict):
+            gather(response[key])
+    hits = []
+    for text in texts:
+        for word in RISK_KEYWORDS:
+            if word in text and len(hits) < 10:
+                hits.append({"keyword": word, "text": text[:120]})
+                break
+    return hits
 
 
 class Failure(Exception):
@@ -239,11 +350,15 @@ def session_call(args, op, **fields):
 def command_open(args, root, manifest):
     hello = ensure_coordinator(args.serial, root, manifest)
     request = {"op": "open", "component": args.component}
-    if args.size:
-        width, _, height = args.size.partition("x")
-        request.update(width=int(width), height=int(height))
-    if args.density:
-        request["density"] = args.density
+    category = sensitive_category(args.component.split("/")[0])
+    if category:
+        request["sensitive"] = category
+    if args.accept_risk:
+        request["acceptRisk"] = True
+    if args.no_accessibility:
+        request["noAccessibility"] = True
+    if args.width:
+        request["width"] = args.width
     if args.user is not None:
         request["user"] = args.user
     response, _ = call(args.serial, request, timeout=120)
@@ -258,13 +373,25 @@ def command_open(args, root, manifest):
 
 
 def command_screenshot(args):
-    record, response, payload = session_call(args, "screenshot")
+    fields = {}
+    if args.annotate:
+        fields["annotate"] = True
+    if args.format != "png":
+        fields["format"] = args.format
+        fields["quality"] = args.quality
+    if args.clip:
+        try:
+            fields["clip"] = [int(v) for v in args.clip.split(",")]
+        except ValueError:
+            raise Failure("bad_request", "--clip is x,y,w,h")
+    record, response, payload = session_call(args, "screenshot", **fields)
     if response.get("ok") and payload is not None:
         if args.output:
             output = Path(args.output).expanduser().resolve()
         else:
             stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
-            output = session_dir(args.workdir, record["sessionId"]) / "screenshots" / ("shot-%s.png" % stamp)
+            extension = "jpg" if response.get("format") == "jpeg" else "png"
+            output = session_dir(args.workdir, record["sessionId"]) / "screenshots" / ("shot-%s.%s" % (stamp, extension))
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(payload)
         response["path"] = str(output)
@@ -272,7 +399,7 @@ def command_screenshot(args):
 
 
 def command_close(args):
-    record, response, _ = session_call(args, "close")
+    record, response, _ = session_call(args, "close", reason=args.reason)
     if response.get("ok") or response.get("error") == "session_lost":
         (session_dir(args.workdir, record["sessionId"]) / "session.json").unlink(missing_ok=True)
     return response
@@ -316,9 +443,12 @@ def build_parser():
     opening.add_argument("--serial", required=True)
     opening.add_argument("--component", required=True, help="包名/Activity")
     opening.add_argument("--workdir", required=True, help="保存会话凭据与截图的目录")
-    opening.add_argument("--size", help="宽x高，默认 720x1600")
-    opening.add_argument("--density", type=int, help="默认 320")
+    opening.add_argument("--width", type=int, help="截图与坐标宽度，默认 720；高按主屏比例；后台屏本身与主屏同尺寸同密度")
     opening.add_argument("--user", type=int, help="仅支持当前前台用户")
+    opening.add_argument("--accept-risk", action="store_true",
+                         help="用户已明确同意敏感应用的账号风险（sensitive_app 之后才可使用）")
+    opening.add_argument("--no-accessibility", action="store_true",
+                         help="会话内不连接无障碍：只能截图和坐标操作，降低被应用察觉的面")
 
     def session_command(name, help_text):
         sub = commands.add_parser(name, help=help_text)
@@ -328,20 +458,47 @@ def build_parser():
 
     session_command("status", "查询会话状态与打断信息")
     session_command("launch", "在会话屏上重新启动应用")
-    session_command("close", "结束会话并清理")
-    shot = session_command("screenshot", "截图保存为 PNG")
+    closing = session_command("close", "结束会话并清理")
+    closing.add_argument("--reason", default="closed",
+                         choices=["closed", "done", "app_blocked", "sensitive_step", "user_stopped"],
+                         help="结束原因：app_blocked 应用拦截或风控，sensitive_step 到了需用户亲自操作的步骤")
+    shot = session_command("screenshot", "截图")
     shot.add_argument("--output")
-    tap = session_command("tap", "点击")
-    tap.add_argument("x", type=float)
-    tap.add_argument("y", type=float)
+    shot.add_argument("--annotate", action="store_true", help="给可交互元素画框并标 ref（会连接无障碍）")
+    shot.add_argument("--format", choices=["png", "jpeg"], default="png")
+    shot.add_argument("--quality", type=int, default=85, help="JPEG 质量 1-100")
+    shot.add_argument("--clip", help="x,y,w,h，截图坐标")
+    layout = session_command("layout", "读取后台屏控件树（会短暂连接无障碍）")
+    layout.add_argument("--full", action="store_true", help="返回全部节点，包括不可见的")
+
+    def input_options(sub):
+        sub.add_argument("--observation", help="只在界面仍是这次观察时执行")
+        sub.add_argument("--settle", action="store_true", help="操作后等界面稳定并返回变化（会连接无障碍）")
+
+    tap = session_command("tap", "点击坐标、ref 或选择器")
+    tap.add_argument("x", type=float, nargs="?")
+    tap.add_argument("y", type=float, nargs="?")
+    tap.add_argument("--ref", help="layout 返回的 ref，如 e3")
+    tap.add_argument("--target", help="选择器，如 text=确定 或 id=email,class=EditText")
+    input_options(tap)
     swipe = session_command("swipe", "滑动")
     for axis in ("x1", "y1", "x2", "y2"):
         swipe.add_argument(axis, type=float)
     swipe.add_argument("--duration", type=int, default=300, help="毫秒")
+    input_options(swipe)
+    scroll = session_command("scroll", "在屏幕中部慢速滚动，可滚到目标出现")
+    scroll.add_argument("direction", choices=["up", "down", "left", "right"])
+    scroll.add_argument("--until", help="选择器，出现即停")
+    scroll.add_argument("--max", type=int, default=8, help="最多滑动次数")
+    input_options(scroll)
     key = session_command("key", "按键，如 BACK、ENTER")
     key.add_argument("key")
-    text = session_command("text", "替换当前焦点输入框的全部文字")
+    input_options(key)
+    text = session_command("text", "替换输入框的全部文字")
     text.add_argument("--value", required=True)
+    text.add_argument("--ref", help="先点这个 ref 再写入")
+    text.add_argument("--target", help="直接写入匹配的输入框，如 text=手机号")
+    input_options(text)
     resolve = session_command("resolve", "转达用户对打断的答复")
     resolve.add_argument("--conflict", required=True)
     decision = resolve.add_mutually_exclusive_group(required=True)
@@ -372,16 +529,55 @@ def run(args, root, manifest):
         return command_close(args)
     fields = {}
     if args.command == "tap":
-        fields = {"x": args.x, "y": args.y}
+        given = [args.x is not None, bool(args.ref), bool(args.target)]
+        if given.count(True) != 1 or (args.x is not None) != (args.y is not None):
+            raise Failure("bad_request", "tap needs exactly one of: X Y, --ref, --target")
+        if args.ref:
+            fields["ref"] = args.ref
+        elif args.target:
+            fields["target"] = parse_selector(args.target)
+        else:
+            fields = {"x": args.x, "y": args.y}
     elif args.command == "swipe":
         fields = {"x1": args.x1, "y1": args.y1, "x2": args.x2, "y2": args.y2, "durationMs": args.duration}
+    elif args.command == "scroll":
+        fields = {"direction": args.direction, "max": args.max}
+        if args.until:
+            fields["until"] = parse_selector(args.until)
     elif args.command == "key":
         fields = {"key": args.key}
     elif args.command == "text":
+        if args.ref and args.target:
+            raise Failure("bad_request", "use --ref or --target, not both")
         fields = {"value": args.value}
+        if args.ref:
+            fields["ref"] = args.ref
+        if args.target:
+            fields["target"] = parse_selector(args.target)
+    elif args.command == "layout":
+        fields = {"full": bool(args.full)}
     elif args.command == "resolve":
         fields = {"conflictId": args.conflict, "grant": bool(args.grant)}
+    if getattr(args, "observation", None):
+        fields["observation"] = args.observation
+    if getattr(args, "settle", False):
+        fields["settle"] = True
     return session_call(args, args.command, **fields)[1]
+
+
+def explain(result):
+    """补上给用户看的中文说明和风控提示。"""
+    error = result.get("error")
+    if error and "userMessage" not in result:
+        result["userMessage"] = USER_MESSAGES.get(error, "操作没有完成：%s" % error)
+    hits = risk_signals(result)
+    if hits:
+        result["riskSignals"] = hits
+        result["riskNotice"] = ("界面上出现了疑似拦截或风控的提示。先看截图确认；如果确实是，立即停止操作，"
+                                "用 close --reason app_blocked 关闭会话，并按 SKILL.md 的模板告诉用户。")
+    if result.get("blankFrame") == "dark":
+        result["blankNotice"] = "截图全黑：可能是应用开启了防截屏保护，也可能还在加载；稍后再截一次仍是黑屏就如实告诉用户。"
+    return result
 
 
 def main(argv=None):
@@ -396,7 +592,7 @@ def main(argv=None):
             result = run(args, root, manifest)
         except Failure as failure:
             result = {"ok": False, "error": failure.code, "detail": failure.detail}
-    print(json.dumps(result, ensure_ascii=False))
+    print(json.dumps(explain(result), ensure_ascii=False))
     return exit_code(result)
 
 

@@ -149,6 +149,17 @@ final class Platform {
         service.getClass().getMethod("moveRootTaskToDisplay", int.class, int.class).invoke(service, rootTaskId, displayId);
     }
 
+    /** Main display logical size and density in portrait as {width, height, dpi}, honoring wm size/density overrides. */
+    static int[] mainDisplayMetrics() throws Exception {
+        Object global = Class.forName("android.hardware.display.DisplayManagerGlobal").getMethod("getInstance").invoke(null);
+        Object info = global.getClass().getMethod("getDisplayInfo", int.class).invoke(global, 0);
+        Class<?> type = info.getClass();
+        int w = type.getField("logicalWidth").getInt(info);
+        int h = type.getField("logicalHeight").getInt(info);
+        int dpi = type.getField("logicalDensityDpi").getInt(info);
+        return new int[] {Math.min(w, h), Math.max(w, h), dpi};
+    }
+
     /** The app's display name in the device language, or null when the package manager cannot provide one. */
     static String appLabel(String packageName) {
         try {

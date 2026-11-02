@@ -223,5 +223,84 @@ class ProtocolTest(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)["error"], "package_busy")
 
 
+    def test_sensitive_app_is_flagged_and_consent_is_forwarded(self):
+        def coordinator(request):
+            if request["op"] == "hello":
+                return {"ok": True, "protocol": client.PROTOCOL, "liveSessions": 0, "sourceSha256": "x"}, None
+            if request.get("acceptRisk"):
+                return {"ok": True, "sessionId": "s1", "token": "t", "state": "running"}, None
+            return {"ok": False, "error": "sensitive_app", "category": request.get("sensitive"),
+                    "askUser": "仍要继续测试吗？"}, None
+        device = FakeDevice(coordinator)
+        try:
+            refused = self.run_with(device, "open", "--serial", "SER", "--component",
+                                    "com.eg.android.AlipayGphone/.Main", "--workdir", str(self.workdir))
+            accepted = self.run_with(device, "open", "--serial", "SER", "--component",
+                                     "com.eg.android.AlipayGphone/.Main", "--workdir", str(self.workdir),
+                                     "--accept-risk", "--no-accessibility")
+        finally:
+            device.close()
+        self.assertEqual(refused.returncode, 4)
+        body = json.loads(refused.stdout)
+        self.assertEqual(body["category"], "支付")
+        self.assertIn("userMessage", body)
+        self.assertEqual(accepted.returncode, 0, accepted.stdout)
+        opened = [r for r in device.requests if r["op"] == "open"][-1]
+        self.assertTrue(opened["acceptRisk"])
+        self.assertTrue(opened["noAccessibility"])
+
+    def test_risk_signals_and_selectors_reach_the_response(self):
+        def coordinator(request):
+            if request["op"] == "hello":
+                return {"ok": True, "protocol": client.PROTOCOL, "liveSessions": 0, "sourceSha256": "x"}, None
+            if request["op"] == "open":
+                return {"ok": True, "sessionId": "s1", "token": "t", "state": "running"}, None
+            if request["op"] == "layout":
+                return {"ok": True, "state": "running", "observation": "o1",
+                        "nodes": [{"ref": "e1", "text": "当前登录环境异常，请稍后再试"}]}, None
+            return {"ok": True, "state": "running", "echo": request}, None
+        device = FakeDevice(coordinator)
+        try:
+            self.run_with(device, "open", "--serial", "SER", "--component", "a/.B", "--workdir", str(self.workdir))
+            layout = self.run_with(device, "layout", "--workdir", str(self.workdir), "--session", "s1")
+            tap = self.run_with(device, "tap", "--workdir", str(self.workdir), "--session", "s1",
+                                "--target", "text=确定,class=Button", "--observation", "o1", "--settle")
+            close = self.run_with(device, "close", "--workdir", str(self.workdir), "--session", "s1",
+                                  "--reason", "app_blocked")
+        finally:
+            device.close()
+        signals = json.loads(layout.stdout)["riskSignals"]
+        self.assertEqual(signals[0]["keyword"], "环境异常")
+        sent = json.loads(tap.stdout)["echo"]
+        self.assertEqual(sent["target"], {"text": "确定", "class": "Button"})
+        self.assertEqual(sent["observation"], "o1")
+        self.assertTrue(sent["settle"])
+        self.assertEqual(device.requests[-1]["reason"], "app_blocked")
+        self.assertEqual(close.returncode, 0)
+
+    def test_tap_needs_exactly_one_target(self):
+        device = FakeDevice(self.coordinator)
+        try:
+            self.run_with(device, "open", "--serial", "SER", "--component", "a/.B", "--workdir", str(self.workdir))
+            both = self.run_with(device, "tap", "--workdir", str(self.workdir), "--session", "s1", "1", "2",
+                                 "--ref", "e1")
+            bad = self.run_with(device, "tap", "--workdir", str(self.workdir), "--session", "s1",
+                                "--target", "name=x")
+        finally:
+            device.close()
+        self.assertEqual(both.returncode, 2)
+        self.assertEqual(bad.returncode, 2)
+
+
+class HelperTest(unittest.TestCase):
+    def test_sensitive_category(self):
+        self.assertEqual(client.sensitive_category("com.tencent.mm"), "社交与支付")
+        self.assertEqual(client.sensitive_category("com.example.mybank.app"), "金融")
+        self.assertIsNone(client.sensitive_category("com.coloros.calculator"))
+
+    def test_every_refusal_has_a_user_message(self):
+        for code in client.REFUSED | client.DEVICE_ERRORS:
+            self.assertIn(code, client.USER_MESSAGES, code)
+
 if __name__ == "__main__":
     unittest.main()

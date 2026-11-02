@@ -1,4 +1,4 @@
-# 会话协议规格（v1）
+# 会话协议规格（v2）
 
 状态：0.2.0-dev 已实现并在 nubia NX888J 验证，差异见 §10。依据见文末“数值与依据”；没有标 SOURCE 的机制都要先在授权真机上验证，才能写进实现。
 
@@ -61,7 +61,7 @@ Agent ──命令行──▶ android.py（电脑端，每条命令一个进程
 | `--component` | 必填，`包名/Activity` |
 | `--workdir` | 必填，电脑端凭据与截图目录 |
 | `--user` | 可选。默认当前前台用户，解析后的值在结果中报告；其他用户或工作资料必须显式指定 |
-| `--size`、`--density` | 可选。默认值待定（GUESS），不按主屏推断 |
+| `--width` | 可选。截图与坐标宽度，默认 720，高按主屏比例。会话屏本身按主屏逻辑尺寸与密度创建（尊重 wm size/density 覆盖），不可调：密度不同时，按 Application 资源取密度的 App 会整体放大（KB android-use commit 8cd7be8，PLG110 设置/天气约 1.5 倍） |
 
 返回 `sessionId`、`displayId`、`state`。令牌只写入 `<workdir>/<sessionId>/session.json`，文件权限 0600，不输出到 stdout。
 
@@ -164,6 +164,10 @@ running ──close / 租约到期 / 协调进程退出──▶ ended
 | `launch` | 在会话屏上重新启动应用 | 同样做已有任务检查 |
 | `close` | 结束会话 | 幂等 |
 | `list` | 列出本设备会话摘要 | 不含令牌 |
+| `layout` | 会话屏控件树 | v2，见 §11.2 |
+| `scroll` | 慢速滚动，可滚到目标出现 | v2，见 §11.4 |
+
+v2 起，`tap`、`text` 支持 `--ref`、`--target`；输入命令支持 `--observation`、`--settle`；`screenshot` 支持 `--annotate`、`--format`、`--clip`；`open` 支持 `--accept-risk`、`--no-accessibility`；`close` 支持 `--reason`。
 
 同一会话内的命令串行执行，不同会话之间并行。
 
@@ -220,6 +224,10 @@ running ──close / 租约到期 / 协调进程退出──▶ ended
 | GUESS | 空闲租约 10 分钟、协调进程无会话 30 秒退出 | 自定义策略 |
 | GUESS | 退出码 0–5、错误码、socket 名、jar 路径 | 项目协议设计，不是系统真值 |
 | GUESS | 冲突检测延迟 | 未测 |
+| GUESS | layout 最多 1500 节点、label 80 字、settle 300ms 间隔且最长 3 秒、scroll 500ms 滑屏高/宽 50% 且默认最多 8 次、纯色判定亮度标准差 < 2 | v2 自定义策略，未实测 |
+| GUESS | 敏感应用名单、应用名关键词、风控提示词 | 人工整理，不完整 |
+| PARTIAL | FLAG_SECURE 内容在非安全虚拟屏上显示为黑 | Android 公开行为描述，本项目未实测 |
+| PARTIAL | getBoundsInScreen 在虚拟屏上返回该屏坐标 | 未实测；坐标错位时先查这里 |
 
 ## 10. 实现说明（0.2.0-dev）
 
@@ -231,3 +239,62 @@ running ──close / 租约到期 / 协调进程退出──▶ ended
 - 截图前先刷新会话任务；会话屏上没有任务时返回 `no_task`，不再等 3 秒后报 `no_frame`。
 - 应用名不能用 `PackageManager.loadLabel`：app_process 自建的 ActivityThread 没有 ConfigurationController，加载其他应用资源会 NPE，`loadLabel` 随即退回 Application 类名（SOURCE PLG110 logcat）。改为 AssetManager 加载 APK + 系统全局 Configuration。
 - `probe` 命令未实现；兼容性问题在 `open` 时以错误码返回。
+
+## 11. v2：控件树、按控件操作、防过期操作、敏感应用（待真机验证）
+
+状态：已编码并通过离线测试，**没有在真机上跑过**。下面所有设备行为都是 PARTIAL，验证前不写进"已验证"。协议号升到 2：旧协调进程没有会话时自动替换，有会话时返回 `coordinator_incompatible`（规则见 §2）。
+
+### 11.1 敏感应用：先告知风险，再同意
+
+- 先例：豆包手机助手（2025-12）因为注入输入和读屏，触发了微信风控，导致用户掉线甚至封号；银行、支付宝、淘宝也拒绝它运行（新闻报道，见知识库调研笔记 §9）。本项目同样会注入输入、连接无障碍、运行在虚拟屏上，**不做任何反检测**。
+- `open` 前先判定目标应用是否敏感，任一命中即算：
+  - 电脑端：包名在 android.py 的 `SENSITIVE_PACKAGES` 中，或包名某段含 `bank`、`securities`、`wallet`、`alipay`、`unionpay`（GUESS：人工整理，不完整）。
+  - 手机端：应用名含 银行、证券、支付、钱包、保险、基金、信用卡、理财（GUESS）。
+- 命中且没带 `--accept-risk` 时，不建屏、不启动，返回 `sensitive_app`（退出码 4），附 `category`、`appLabel`、`askUser`。Agent 必须把 `askUser` 转述给用户；用户在对话里明确同意后，才能加 `--accept-risk` 重新 open。
+- 同意后建议同时加 `--no-accessibility`：会话内不再连接无障碍，`layout`、按控件操作、`text` 和标注截图都会返回 `accessibility_disabled`。
+
+### 11.2 控件树：layout
+
+- 每次调用都单独连接 UiAutomation（flag 同 §6），读完立即断开，不常驻。读取范围只有会话屏的窗口（`getWindowsOnAllDisplays().get(displayId)`）。
+- 默认只返回屏幕上可见、并且有文字/描述或可交互的节点；`--full` 返回全部节点，看不见的标 `offscreen`。最多 1500 个节点（GUESS）。
+- 节点字段：`ref`（e1…）、`class`（简名）、`text`、`desc`、`id`（去掉 `包名:id/`）、`hint`、`label`（自身没有文字的可点击节点，取子节点文字拼接，最长 80 字）、`bounds` [l,t,r,b]、`center` [x,y]、`actions`（click/longClick/scroll/edit/check）、`state`（checked/focused/selected/disabled/password）。
+- 坐标换算到截图坐标系，和 `tap` 通用。
+
+### 11.3 观察与过期操作
+
+- `screenshot` 和 `layout` 每次都会生成新的观察 `observation`（o1、o2…）。refs 只属于最近一次 layout，或标注截图的那次观察。
+- **任何输入**（tap/swipe/key/text/scroll/launch）、打断恢复，都会让当前观察失效。
+- `--ref eN` 只能对仍然有效的观察使用，失效返回 `stale_observation`，ref 不存在返回 `unknown_ref`。
+- 坐标操作可以带 `--observation oN`。带了就校验：不是最新观察，或者观察之后已经有过输入，都返回 `stale_observation`。不带不校验，兼容旧用法。
+
+### 11.4 按控件操作
+
+- 选择器写法：`--target "text=确定"`，可以组合，如 `id=email,class=EditText`。键有 text、id、desc、class；text 同时匹配 text、hint 和 label。先找完全相等的，找不到再找包含的。
+- `tap --target`：内部先做一次 layout（生成新观察）。只命中一个就点中心；没有命中返回 `element_not_found`，附最多 15 个候选文字；命中多个返回 `element_ambiguous`，附候选节点（带这次观察的 ref），Agent 可以改用 `--ref`。
+- `text --target`：只在可编辑节点里找，先 ACTION_FOCUS，再 ACTION_SET_TEXT。`text --ref`：先点 ref 中心，再写当前焦点输入框。
+- `scroll up|down|left|right [--until 选择器] [--max N]`：在会话屏中部慢速滑动 500ms，距离为屏高或屏宽的 50%（GUESS）。带 `--until` 时每滑一次查一次控件树，出现目标就停下并返回该节点，最多 N 次（默认 8），找不到返回 `element_not_found`。
+
+### 11.5 settle 与变化
+
+- 输入命令加 `--settle`：动作后每 300ms 读一次控件树，连续两次一样就算稳定，最长 3 秒（GUESS）。
+- 返回 `settled`、新的 `observation`，以及和上一次控件树相比的 `changes.added`（节点，带 ref，最多 40 个）和 `changes.removed`（文字，最多 40 个）。之前没有读过控件树时，直接返回完整 `nodes`。
+- 稳定判断用的是控件树，不是画面，所以动画和视频这类变化看不出来。
+
+### 11.6 截图选项
+
+- `--annotate`：先读控件树，再在截图上给可交互节点画框，标上 ref 编号；同时返回节点列表，refs 绑定这次观察。会连接无障碍。
+- `--format jpeg --quality 1..100`、`--clip x,y,w,h`（截图坐标）。裁剪后坐标仍然用整屏坐标系，返回里带 `clip` 方便换算。
+- 每张截图都会算 `blankFrame`：32×32 采样亮度标准差 < 2 即为纯色（GUESS）。纯黑通常说明应用开了防截屏保护（FLAG_SECURE 内容在非安全虚拟屏上显示为黑，PARTIAL），也可能只是还在加载。
+
+### 11.7 风险信号与无法继续时的说明
+
+- 电脑端扫描 layout、settle、标注截图返回的文字，命中风控提示词（"环境异常""请关闭无障碍""检测到""被迫下线"等，见 android.py `RISK_KEYWORDS`，GUESS）时，加 `riskSignals`（命中词和原文）和 `riskNotice`。这只是提示，不改变退出码，Agent 必须看截图确认。
+- 所有错误返回都带中文 `userMessage`，说明发生了什么、为什么、用户能做什么，Agent 可以直接转述。
+- `close --reason app_blocked|sensitive_step|user_stopped|done`：记录结束原因，`status` 和 `list` 里能看到。
+- 发现应用拦截或风控时，Agent 必须：停止操作（不重试、不换方式绕过）→ 用 `--reason app_blocked` 关闭会话 → 按 SKILL.md 的"无法继续时的汇报"模板告诉用户。
+
+### 11.8 不做的
+
+- 预览：需要新增流式通道，超出 v1 范围。
+- 应用静音：shell 能用的办法只有改该应用的 appops（PLAY_AUDIO），这会改应用设置，而且被强制结束时设置无法恢复，和"不改系统设置"冲突。暂不实现。
+- 反检测：伪装注入事件、隐藏无障碍、隐藏虚拟屏，都不做。

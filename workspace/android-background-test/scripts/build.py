@@ -21,7 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT.parents[1] / "android-background-test"
 VERSION = "0.2.0-dev"
 MIN_API = 31
-CAPABILITIES = ["offline_verify", "local_doctor", "device_session", "screenshot", "input", "text"]
+CAPABILITIES = ["offline_verify", "local_doctor", "device_session", "screenshot", "input", "text", "layout",
+                "selector", "observation", "settle", "sensitive_app_consent"]
 # 真机验证记录见 docs/validation.md；未列出的机型都按未验证处理。
 TESTED_DEVICES = [
     {"model": "nubia NX888J", "android": "17", "build": "2.7.0.0-ut test-keys"},
