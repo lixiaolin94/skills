@@ -8,7 +8,7 @@
 
 | 技能 | 说明 |
 |------|------|
-| **[android-background-test](android-background-test/)** | 通过 ADB 在 Android 真机的隐藏后台屏上测试应用：启动、截图、点击、滑动、按键、中文输入，不打扰用户前台使用。 |
+| **[android-background-test](android-background-test/)** | 通过 ADB 在 Android 真机的隐藏后台屏上测试应用：截图、读控件树、按元素或坐标点击、滑动、按键、中文输入、按步骤跑用例，不打扰用户前台使用。 |
 | **[web-shader-extractor](web-shader-extractor/)** | 从网页中提取 WebGL/Canvas/Shader 视觉特效代码，反混淆后移植为独立原生 JS 项目。 |
 
 ## 安装
@@ -37,6 +37,8 @@ npx skills add https://github.com/lixiaolin94/skills --skill android-background-
 - 编译目标为 Android 12（API 31）及以上；实际可用的最低版本未测试
 - 测试期间手机需亮屏并已解锁，锁屏会暂停会话
 - 部分 ROM（如小米）可能要另开“USB 调试（安全设置）”才能点击，未实测
+
+支付、银行、社交、电商这类会识别自动化的应用，要用户确认账号风险后才会打开；应用拦截时会停下并说明原因，不做反检测。控件树、按元素操作和这些确认流程是本版新增，尚未在真机上验证。
 
 手机上不安装任何应用。`runtime/server.jar` 是由 [`workspace/android-background-test`](workspace/android-background-test/) 源码构建的 DEX，可以用 `python3 workspace/android-background-test/scripts/build.py` 自行重建，并与 `android-background-test/manifest.json` 中的 sha256 对照。
 

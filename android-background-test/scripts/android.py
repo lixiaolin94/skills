@@ -454,6 +454,7 @@ def build_parser():
         sub = commands.add_parser(name, help=help_text)
         sub.add_argument("--workdir", required=True)
         sub.add_argument("--session", required=True)
+        sub.add_argument("--json", action="store_true", help="元素输出完整 JSON 字段（默认每个元素一行）")
         return sub
 
     session_command("status", "查询会话状态与打断信息")
@@ -565,6 +566,45 @@ def run(args, root, manifest):
     return session_call(args, args.command, **fields)[1]
 
 
+def compact_node(node):
+    """一行描述一个元素：e12 Button "登录" #btn_login (360,840) click [focused]。"""
+    parts = [node.get("ref", "?"), node.get("class", "")]
+    for key, prefix in (("text", ""), ("label", "label:"), ("desc", "desc:"), ("hint", "hint:")):
+        if node.get(key):
+            parts.append("%s%s" % (prefix, json.dumps(node[key], ensure_ascii=False)))
+    if node.get("id"):
+        parts.append("#" + node["id"])
+    center = node.get("center")
+    if center:
+        parts.append("(%s,%s)" % (center[0], center[1]))
+    if node.get("actions"):
+        parts.append(",".join(node["actions"]))
+    flags = list(node.get("state") or []) + (["offscreen"] if node.get("offscreen") else [])
+    if flags:
+        parts.append("[%s]" % ",".join(flags))
+    return " ".join(p for p in parts if p)
+
+
+def compact(result):
+    """把节点列表换成每行一个元素的文本，省上下文；--json 时保留完整字段。"""
+    def lines(nodes):
+        return [compact_node(n) for n in nodes if isinstance(n, dict)]
+
+    if isinstance(result.get("nodes"), list):
+        result["elements"] = lines(result.pop("nodes"))
+    if isinstance(result.get("candidates"), list):
+        result["candidates"] = lines(result["candidates"])
+    if isinstance(result.get("target"), dict):
+        result["target"] = compact_node(result["target"])
+    settle = result.get("settle")
+    if isinstance(settle, dict):
+        compact(settle)
+        changes = settle.get("changes") or {}
+        if isinstance(changes.get("added"), list):
+            changes["added"] = lines(changes["added"])
+    return result
+
+
 def explain(result):
     """补上给用户看的中文说明和风控提示。"""
     error = result.get("error")
@@ -574,7 +614,7 @@ def explain(result):
     if hits:
         result["riskSignals"] = hits
         result["riskNotice"] = ("界面上出现了疑似拦截或风控的提示。先看截图确认；如果确实是，立即停止操作，"
-                                "用 close --reason app_blocked 关闭会话，并按 SKILL.md 的模板告诉用户。")
+                                "用 close --reason app_blocked 关闭会话，并按 references/risk.md 的模板告诉用户。")
     if result.get("blankFrame") == "dark":
         result["blankNotice"] = "截图全黑：可能是应用开启了防截屏保护，也可能还在加载；稍后再截一次仍是黑屏就如实告诉用户。"
     return result
@@ -592,7 +632,10 @@ def main(argv=None):
             result = run(args, root, manifest)
         except Failure as failure:
             result = {"ok": False, "error": failure.code, "detail": failure.detail}
-    print(json.dumps(explain(result), ensure_ascii=False))
+    result = explain(result)
+    if not getattr(args, "json", False):
+        result = compact(result)
+    print(json.dumps(result, ensure_ascii=False))
     return exit_code(result)
 
 

@@ -269,8 +269,10 @@ class ProtocolTest(unittest.TestCase):
                                   "--reason", "app_blocked")
         finally:
             device.close()
-        signals = json.loads(layout.stdout)["riskSignals"]
-        self.assertEqual(signals[0]["keyword"], "环境异常")
+        body = json.loads(layout.stdout)
+        self.assertEqual(body["riskSignals"][0]["keyword"], "环境异常")
+        self.assertEqual(body["elements"], ['e1 "当前登录环境异常，请稍后再试"'])
+        self.assertIn("references/risk.md", body["riskNotice"])
         sent = json.loads(tap.stdout)["echo"]
         self.assertEqual(sent["target"], {"text": "确定", "class": "Button"})
         self.assertEqual(sent["observation"], "o1")
@@ -293,6 +295,17 @@ class ProtocolTest(unittest.TestCase):
 
 
 class HelperTest(unittest.TestCase):
+    def test_compact_node(self):
+        line = client.compact_node({"ref": "e3", "class": "Button", "text": "登录", "id": "login",
+                                    "center": [360, 840], "actions": ["click"], "state": ["focused"]})
+        self.assertEqual(line, 'e3 Button "登录" #login (360,840) click [focused]')
+
+    def test_skill_links_resolve(self):
+        import re
+        text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        for link in re.findall(r"\]\((references/[^)]+)\)", text):
+            self.assertTrue((SKILL / link).is_file(), link)
+
     def test_sensitive_category(self):
         self.assertEqual(client.sensitive_category("com.tencent.mm"), "社交与支付")
         self.assertEqual(client.sensitive_category("com.example.mybank.app"), "金融")

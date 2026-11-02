@@ -8,7 +8,7 @@ A small collection of reusable skills for AI coding agents.
 
 | Skill | Description |
 |-------|-------------|
-| **[android-background-test](android-background-test/)** | Test apps on a real Android phone over ADB on a hidden background display: launch, screenshot, tap, swipe, keys, and Chinese text without disturbing the user. |
+| **[android-background-test](android-background-test/)** | Test apps on a real Android phone over ADB on a hidden background display: screenshot, UI tree, tap by element or coordinate, swipe, keys, Chinese text, and step-by-step journeys, without disturbing the user. |
 | **[web-shader-extractor](web-shader-extractor/)** | Extract WebGL/Canvas/Shader effects from websites and port them into standalone native JS projects. |
 
 ## Install
@@ -37,6 +37,8 @@ Requirements:
 - Android 12 (API 31) or newer is the build target; the lowest working version has not been tested
 - The phone must stay awake and unlocked while testing; locking pauses the session
 - Some ROMs (for example Xiaomi) may need an extra "USB debugging (security settings)" switch before taps work; untested
+
+Apps that police automation (payment, banking, social, e-commerce) are only opened after the user accepts the account risk; the skill stops and explains when an app blocks it, and never tries to evade detection. The UI tree, element taps and these consent flows are new in this build and not yet verified on a device.
 
 Nothing is installed on the phone. `runtime/server.jar` is a DEX built from the source in [`workspace/android-background-test`](workspace/android-background-test/); rebuild it with `python3 workspace/android-background-test/scripts/build.py` and compare the sha256 in `android-background-test/manifest.json`.
 
